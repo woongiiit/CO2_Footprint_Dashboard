@@ -8,6 +8,7 @@ APP_DIR = Path(__file__).resolve().parent
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
+from components.filter_multiselect import filter_multiselect
 from components.map_view import render_map
 from config import DATA_DIR
 from services.data_service import (
@@ -74,6 +75,70 @@ def inject_styles():
             font-weight: 400;
             line-height: 1.55;
             word-break: keep-all;
+        }
+        /* 필터 드롭다운 */
+        .filter-field-label {
+            color: #31333f;
+            font-size: 0.95rem;
+            font-weight: 500;
+            margin: 0.35rem 0 0.3rem 0;
+        }
+        .filter-trigger-disabled {
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 0.55rem 0.75rem;
+            color: #9aa0a6;
+            font-size: 0.9rem;
+            background: #f5f5f5;
+            margin-bottom: 0.35rem;
+        }
+        .filter-popover-wrap [data-testid="stPopover"] > button {
+            width: 100% !important;
+            justify-content: space-between !important;
+            border: 1px solid #f25c54 !important;
+            border-radius: 6px !important;
+            background: #fff !important;
+            color: #9aa0a6 !important;
+            font-size: 0.9rem !important;
+            font-weight: 400 !important;
+            padding: 0.55rem 0.75rem !important;
+            box-shadow: none !important;
+            margin-bottom: 0.35rem;
+        }
+        .filter-popover-wrap [data-testid="stPopover"] > button p {
+            color: inherit !important;
+            font-size: 0.9rem !important;
+        }
+        .filter-popover-wrap.has-selection [data-testid="stPopover"] > button,
+        .filter-popover-wrap.has-selection [data-testid="stPopover"] > button p {
+            color: #31333f !important;
+        }
+        div[data-testid="stPopoverBody"] {
+            min-width: min(100%, 480px) !important;
+            padding: 0 !important;
+            border-radius: 8px !important;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12) !important;
+        }
+        div[data-testid="stPopoverBody"] > div {
+            padding: 0.5rem 0.75rem 0.75rem !important;
+        }
+        div[data-testid="stPopoverBody"] [data-testid="stCheckbox"]:first-of-type {
+            background: #f3f4f6;
+            margin: -0.5rem -0.75rem 0.25rem -0.75rem;
+            padding: 0.5rem 0.75rem;
+            border-radius: 8px 8px 0 0;
+            width: calc(100% + 1.5rem);
+        }
+        div[data-testid="stPopoverBody"] [data-testid="stCheckbox"]:first-of-type label p {
+            font-size: 0.9rem !important;
+        }
+        hr.filter-divider {
+            margin: 0.5rem 0 0.65rem 0;
+            border: none;
+            border-top: 1px solid #e8e8e8;
+        }
+        div[data-testid="stPopoverBody"] [data-testid="column"] label p {
+            font-size: 0.88rem !important;
         }
         </style>
         """,
@@ -195,15 +260,17 @@ def main():
 
     with col_left:
         st.markdown("#### 필터 선택")
-        selected_provinces = st.multiselect(
+        selected_provinces = filter_multiselect(
             "도",
             options=province_options,
+            key="filter_provinces",
             placeholder="도를 선택하세요 (복수 선택 가능)",
         )
         sigungu_options = get_sigungu_options_for_provinces(selected_provinces)
-        selected_sigungu = st.multiselect(
+        selected_sigungu = filter_multiselect(
             "시군구",
             options=sigungu_options,
+            key="filter_sigungu",
             format_func=lambda x: format_sigungu_label(x, len(selected_provinces)),
             placeholder=(
                 "도를 먼저 선택하세요"
@@ -212,15 +279,17 @@ def main():
             ),
             disabled=not selected_provinces,
         )
-        selected_daebunryu = st.multiselect(
+        selected_daebunryu = filter_multiselect(
             "업종(대분류)",
             options=daebunryu_options,
+            key="filter_daebunryu",
             placeholder="대분류를 선택하세요 (복수 선택 가능)",
         )
         jungbunryu_options = get_jungbunryu_options_for_daebunryu(selected_daebunryu)
-        selected_jungbunryu = st.multiselect(
+        selected_jungbunryu = filter_multiselect(
             "업종(중분류)",
             options=jungbunryu_options,
+            key="filter_jungbunryu",
             placeholder=(
                 "대분류를 먼저 선택하세요"
                 if not selected_daebunryu
@@ -228,9 +297,10 @@ def main():
             ),
             disabled=not selected_daebunryu,
         )
-        selected_periods = st.multiselect(
+        selected_periods = filter_multiselect(
             "기간",
             options=period_keys,
+            key="filter_periods",
             format_func=lambda k: period_labels.get(k, k),
             placeholder="기간을 선택하세요 (복수 선택 가능)",
         )
