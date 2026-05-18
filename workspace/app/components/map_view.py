@@ -6,7 +6,7 @@ from streamlit_folium import st_folium
 from services.geo import attach_coordinates
 
 
-def render_map(map_df):
+def render_map(map_df, height: int = 520):
     if map_df.empty:
         st.info("지도에 표시할 데이터가 없습니다. 필터 조건을 선택해 주세요.")
         return
@@ -34,4 +34,4 @@ def render_map(map_df):
             weight=1,
         ).add_to(cluster)
 
-    st_folium(m, width=None, height=520, returned_objects=[])
+    st_folium(m, width=None, height=height, returned_objects=[])

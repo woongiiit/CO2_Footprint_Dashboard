@@ -11,7 +11,7 @@ SIGUNGU_FIELD_PATH = (
 UPJONG_FIELD_PATH = PROJECT_ROOT / "datas" / "data_generator" / "업종 필드.csv"
 
 
-def list_periods() -> list[str]:
+def list_periods() -> list[tuple[str, str]]:
     files = sorted(DATA_DIR.glob("관광소비지출_*.csv"))
     periods = []
     for f in files:
@@ -19,6 +19,28 @@ def list_periods() -> list[str]:
         label = f"{stem[:4]}년 {int(stem[4:6])}월"
         periods.append((stem, label))
     return periods
+
+
+def resolve_period_keys(period_keys: list[str]) -> list[str]:
+    if period_keys:
+        return period_keys
+    return [p[0] for p in list_periods()]
+
+
+def periods_in_range(
+    start_key: str | None,
+    end_key: str | None,
+    available: list[str] | None = None,
+) -> list[str]:
+    if not start_key and not end_key:
+        return []
+    start = start_key or end_key
+    end = end_key or start_key
+    if start > end:
+        start, end = end, start
+    if available is None:
+        available = [p[0] for p in list_periods()]
+    return [p for p in available if start <= p <= end]
 
 
 def load_spending(periods: list[str]) -> pd.DataFrame:
@@ -128,8 +150,7 @@ def build_filtered_dataset(
     if not period_keys and not sigungu_list and not upjong_list:
         return pd.DataFrame()
 
-    if not period_keys:
-        period_keys = [p[0] for p in list_periods()]
+    period_keys = resolve_period_keys(period_keys)
 
     spending = load_spending(period_keys)
     if spending.empty:

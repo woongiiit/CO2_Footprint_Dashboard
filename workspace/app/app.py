@@ -9,10 +9,12 @@ if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
 from components.filter_multiselect import filter_multiselect
+from components.period_range_select import period_range_select
+from components.analytics_dashboard import render_analytics_dashboard
 from components.map_view import render_map
 from config import DATA_DIR
+from services.chart_data import prepare_chart_bundle
 from services.data_service import (
-    aggregate_for_insights,
     aggregate_for_map,
     build_filtered_dataset,
     get_daebunryu_options,
@@ -20,10 +22,11 @@ from services.data_service import (
     get_province_options,
     get_sigungu_options_for_provinces,
     list_periods,
+    periods_in_range,
+    resolve_period_keys,
     resolve_sigungu_filter,
     resolve_upjong_filter,
 )
-from services.insights import generate_ai_content
 
 
 def inject_styles():
@@ -140,6 +143,17 @@ def inject_styles():
         div[data-testid="stPopoverBody"] [data-testid="column"] label p {
             font-size: 0.88rem !important;
         }
+        .filter-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            margin-bottom: 0.25rem;
+        }
+        .filter-header-row h4 {
+            margin: 0;
+            flex: 1;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -153,8 +167,65 @@ def render_banner():
     )
 
 
-def format_period_label(period_key: str) -> str:
-    return f"{period_key[:4]}년 {int(period_key[4:6])}월"
+def format_period_label_short(period_key: str) -> str:
+    return f"{period_key[2:4]}년 {int(period_key[4:6])}월"
+
+
+def format_period_range_summary(
+    start_key: str | None, end_key: str | None
+) -> str:
+    if not start_key and not end_key:
+        return "미선택"
+    start = start_key or end_key
+    end = end_key or start_key
+    if start > end:
+        start, end = end, start
+    if start == end:
+        return format_period_label_short(start)
+    return f"{format_period_label_short(start)} ~ {format_period_label_short(end)}"
+
+
+def _apply_filters_from_draft() -> None:
+    st.session_state["applied_provinces"] = list(
+        st.session_state.get("filter_provinces", [])
+    )
+    st.session_state["applied_sigungu"] = list(st.session_state.get("filter_sigungu", []))
+    st.session_state["applied_daebunryu"] = list(
+        st.session_state.get("filter_daebunryu", [])
+    )
+    st.session_state["applied_jungbunryu"] = list(
+        st.session_state.get("filter_jungbunryu", [])
+    )
+    st.session_state["applied_period_start"] = st.session_state.get(
+        "filter_period_range_start"
+    )
+    st.session_state["applied_period_end"] = st.session_state.get(
+        "filter_period_range_end"
+    )
+    st.session_state["filters_applied"] = True
+
+
+def _applied_filter_key(period_keys: list[str]) -> tuple:
+    return (
+        tuple(st.session_state.get("applied_provinces", [])),
+        tuple(st.session_state.get("applied_sigungu", [])),
+        tuple(st.session_state.get("applied_daebunryu", [])),
+        tuple(st.session_state.get("applied_jungbunryu", [])),
+        tuple(
+            periods_in_range(
+                st.session_state.get("applied_period_start"),
+                st.session_state.get("applied_period_end"),
+                period_keys,
+            )
+        ),
+    )
+
+
+def _applied_period_summary() -> str:
+    return format_period_range_summary(
+        st.session_state.get("applied_period_start"),
+        st.session_state.get("applied_period_end"),
+    )
 
 
 def format_sigungu_label(full_name: str, province_count: int) -> str:
@@ -164,7 +235,7 @@ def format_sigungu_label(full_name: str, province_count: int) -> str:
 
 
 def _summary_sections(
-    provinces, sigungu, daebunryu, jungbunryu, periods
+    provinces, sigungu, daebunryu, jungbunryu, period_summary
 ) -> list[tuple[str, str]]:
     prov = ", ".join(provinces) if provinces else "전체"
     if sigungu:
@@ -182,31 +253,30 @@ def _summary_sections(
         jung = "선택 대분류 전체"
     else:
         jung = "전체"
-    per = ", ".join(format_period_label(p) for p in periods) if periods else "전체"
     return [
         ("도", prov),
         ("시군구", sig),
         ("업종(대분류)", dae),
         ("업종(중분류)", jung),
-        ("기간", per),
+        ("기간", period_summary),
     ]
 
 
 def build_selection_summary(
-    provinces, sigungu, daebunryu, jungbunryu, periods
+    provinces, sigungu, daebunryu, jungbunryu, period_summary
 ) -> str:
     lines = [f"{label}: {value}" for label, value in _summary_sections(
-        provinces, sigungu, daebunryu, jungbunryu, periods
+        provinces, sigungu, daebunryu, jungbunryu, period_summary
     )]
     return "\n".join(lines)
 
 
 def render_selection_summary(
-    provinces, sigungu, daebunryu, jungbunryu, periods
+    provinces, sigungu, daebunryu, jungbunryu, period_summary
 ) -> None:
     blocks = []
     for label, value in _summary_sections(
-        provinces, sigungu, daebunryu, jungbunryu, periods
+        provinces, sigungu, daebunryu, jungbunryu, period_summary
     ):
         blocks.append(
             f'<div class="summary-item">'
@@ -235,6 +305,23 @@ def cached_dataset(
     )
 
 
+@st.cache_data(show_spinner=False)
+def cached_chart_bundle(
+    provinces: tuple,
+    sigungu: tuple,
+    daebunryu: tuple,
+    jungbunryu: tuple,
+    periods: tuple,
+):
+    resolved_sigungu = resolve_sigungu_filter(list(provinces), list(sigungu))
+    resolved_upjong = resolve_upjong_filter(list(daebunryu), list(jungbunryu))
+    carbon_df = build_filtered_dataset(
+        resolved_sigungu, resolved_upjong, list(periods)
+    )
+    period_keys = resolve_period_keys(list(periods))
+    return prepare_chart_bundle(carbon_df, period_keys, resolved_sigungu)
+
+
 def main():
     st.set_page_config(
         page_title="탄소발자국 대시보드",
@@ -251,15 +338,20 @@ def main():
 
     period_options = list_periods()
     period_keys = [p[0] for p in period_options]
-    period_labels = {p[0]: p[1] for p in period_options}
 
     province_options = get_province_options()
     daebunryu_options = get_daebunryu_options()
 
-    col_left, col_center, col_right = st.columns([1.1, 1.4, 1.5], gap="medium")
+    col_filters, col_main = st.columns([1, 2.85], gap="medium")
 
-    with col_left:
-        st.markdown("#### 필터 선택")
+    with col_filters:
+        hdr_title, hdr_btn = st.columns([4, 1], vertical_alignment="center")
+        with hdr_title:
+            st.markdown("#### 필터 선택")
+        with hdr_btn:
+            if st.button("적용", type="primary", use_container_width=True, key="filter_apply_btn"):
+                _apply_filters_from_draft()
+
         selected_provinces = filter_multiselect(
             "도",
             options=province_options,
@@ -297,81 +389,52 @@ def main():
             ),
             disabled=not selected_daebunryu,
         )
-        selected_periods = filter_multiselect(
+        period_start, period_end = period_range_select(
             "기간",
-            options=period_keys,
-            key="filter_periods",
-            format_func=lambda k: period_labels.get(k, k),
-            placeholder="기간을 선택하세요 (복수 선택 가능)",
+            period_options=period_options,
         )
+        period_summary = format_period_range_summary(period_start, period_end)
 
-        selection_text = build_selection_summary(
-            selected_provinces,
-            selected_sigungu,
-            selected_daebunryu,
-            selected_jungbunryu,
-            selected_periods,
-        )
         st.markdown("##### 선택 요약")
-        render_selection_summary(
-            selected_provinces,
-            selected_sigungu,
-            selected_daebunryu,
-            selected_jungbunryu,
-            selected_periods,
-        )
-
-    carbon_df = cached_dataset(
-        tuple(selected_provinces),
-        tuple(selected_sigungu),
-        tuple(selected_daebunryu),
-        tuple(selected_jungbunryu),
-        tuple(selected_periods),
-    )
-    map_df = aggregate_for_map(carbon_df)
-    stats = aggregate_for_insights(carbon_df)
-
-    with col_center:
-        st.markdown("#### AI 분석")
-        if carbon_df.empty:
-            st.warning("표시할 데이터가 없습니다. 왼쪽에서 조건을 선택해 주세요.")
+        if st.session_state.get("filters_applied"):
+            render_selection_summary(
+                st.session_state.get("applied_provinces", []),
+                st.session_state.get("applied_sigungu", []),
+                st.session_state.get("applied_daebunryu", []),
+                st.session_state.get("applied_jungbunryu", []),
+                _applied_period_summary(),
+            )
         else:
-            if st.button("AI 요약·인사이트 생성", type="primary", use_container_width=True):
-                with st.spinner("Hugging Face 모델로 분석 중..."):
-                    summary, insights = generate_ai_content(stats, selection_text)
-                st.session_state["ai_summary"] = summary
-                st.session_state["ai_insights"] = insights
+            render_selection_summary(
+                selected_provinces,
+                selected_sigungu,
+                selected_daebunryu,
+                selected_jungbunryu,
+                period_summary,
+            )
 
-            summary = st.session_state.get("ai_summary")
-            insights = st.session_state.get("ai_insights")
+    with col_main:
+        if not st.session_state.get("filters_applied"):
+            st.info("필터를 선택한 뒤 **[적용]** 버튼을 눌러 주세요.")
+        else:
+            filter_key = _applied_filter_key(period_keys)
+            carbon_df = cached_dataset(*filter_key)
+            chart_bundle = cached_chart_bundle(*filter_key)
+            map_df = aggregate_for_map(carbon_df)
+            total_t = (
+                carbon_df["총_탄소발자국(t_CO2eq)"].sum()
+                if not carbon_df.empty
+                else 0.0
+            )
+            region_count = (
+                carbon_df["시군구"].nunique() if not carbon_df.empty else 0
+            )
 
-            if summary:
-                st.markdown("**결과 요약**")
-                st.markdown(
-                    f'<div class="panel-box">{html.escape(summary)}</div>',
-                    unsafe_allow_html=True,
-                )
-            if insights:
-                st.markdown("**고려할 인사이트**")
-                st.markdown(
-                    f'<div class="panel-box">{html.escape(insights)}</div>',
-                    unsafe_allow_html=True,
-                )
-            if not summary and not insights:
-                st.info(
-                    "「AI 요약·인사이트 생성」 버튼을 누르면 Hugging Face API로 "
-                    "선택 조건에 대한 요약과 인사이트를 생성합니다."
-                )
-
-            if stats:
-                st.caption(
-                    f"총 {stats.get('total_t_co2eq', 0):,.2f} t CO2eq · "
-                    f"{stats.get('region_count', 0)}개 지역"
-                )
-
-    with col_right:
-        st.markdown("#### 지역별 탄소발자국 지도")
-        render_map(map_df)
+            tab_charts, tab_map = st.tabs(["차트", "지도"])
+            with tab_charts:
+                render_analytics_dashboard(chart_bundle, total_t, region_count)
+            with tab_map:
+                render_map(map_df, height=620)
 
 
 if __name__ == "__main__":
