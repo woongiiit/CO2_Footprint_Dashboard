@@ -1,0 +1,7 @@
+[build]
+buildCommand = "pip install -r workspace/app/requirements.txt"
+
+[deploy]
+startCommand = "cd workspace/app && streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
