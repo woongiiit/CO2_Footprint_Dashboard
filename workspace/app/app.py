@@ -12,6 +12,7 @@ from components.filter_multiselect import filter_multiselect
 from components.period_range_select import period_range_select
 from components.analytics_dashboard import render_analytics_dashboard
 from components.map_view import render_map
+from components.selection_summary import format_sigungu_label, render_selection_summary
 from config import DATA_DIR
 from services.chart_data import prepare_chart_bundle
 from services.data_service import (
@@ -172,6 +173,28 @@ def inject_styles():
             line-height: 1.45;
             word-break: keep-all;
         }
+        .summary-detail-label {
+            color: #31333f;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin: 0.5rem 0 0.25rem 0;
+        }
+        .summary-detail-label:first-of-type {
+            margin-top: 0;
+        }
+        .summary-detail-body {
+            color: #5c5f6a;
+            font-size: 0.78rem;
+            line-height: 1.55;
+            word-break: keep-all;
+            max-height: 140px;
+            overflow-y: auto;
+            padding: 0.45rem 0.6rem;
+            margin-bottom: 0.35rem;
+            background: #fff;
+            border: 1px solid #e8ece9;
+            border-radius: 4px;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -243,80 +266,6 @@ def _applied_period_summary() -> str:
     return format_period_range_summary(
         st.session_state.get("applied_period_start"),
         st.session_state.get("applied_period_end"),
-    )
-
-
-def format_sigungu_label(full_name: str, province_count: int) -> str:
-    if province_count == 1 and " " in full_name:
-        return full_name.split(" ", 1)[1]
-    return full_name
-
-
-def _summary_sections(
-    provinces, sigungu, daebunryu, jungbunryu, period_summary
-) -> list[tuple[str, str]]:
-    prov = ", ".join(provinces) if provinces else "전체"
-    if sigungu:
-        sig = ", ".join(
-            format_sigungu_label(s, len(provinces)) for s in sigungu
-        )
-    elif provinces:
-        sig = "선택 도 전체"
-    else:
-        sig = "전체"
-    dae = ", ".join(daebunryu) if daebunryu else "전체"
-    if jungbunryu:
-        jung = ", ".join(jungbunryu)
-    elif daebunryu:
-        jung = "선택 대분류 전체"
-    else:
-        jung = "전체"
-    return [
-        ("도", prov),
-        ("시군구", sig),
-        ("업종(대분류)", dae),
-        ("업종(중분류)", jung),
-        ("기간", period_summary),
-    ]
-
-
-def build_selection_summary(
-    provinces, sigungu, daebunryu, jungbunryu, period_summary
-) -> str:
-    lines = [f"{label}: {value}" for label, value in _summary_sections(
-        provinces, sigungu, daebunryu, jungbunryu, period_summary
-    )]
-    return "\n".join(lines)
-
-
-def render_selection_summary(
-    provinces, sigungu, daebunryu, jungbunryu, period_summary, *, inline: bool = False
-) -> None:
-    sections = _summary_sections(
-        provinces, sigungu, daebunryu, jungbunryu, period_summary
-    )
-    if inline:
-        cols = st.columns(len(sections))
-        for col, (label, value) in zip(cols, sections):
-            with col:
-                st.markdown(
-                    f'<p class="summary-inline-label">{html.escape(label)}</p>'
-                    f'<p class="summary-inline-value">{html.escape(value)}</p>',
-                    unsafe_allow_html=True,
-                )
-        return
-
-    blocks = []
-    for label, value in sections:
-        blocks.append(
-            f'<div class="summary-item">'
-            f'<div class="summary-item-label">{html.escape(label)}</div>'
-            f'<div class="summary-item-value">{html.escape(value)}</div>'
-            f"</div>"
-        )
-    st.markdown(
-        f'<div class="summary-box">{"".join(blocks)}</div>',
-        unsafe_allow_html=True,
     )
 
 
@@ -444,7 +393,6 @@ def main():
                 st.session_state.get("applied_daebunryu", []),
                 st.session_state.get("applied_jungbunryu", []),
                 _applied_period_summary(),
-                inline=True,
             )
         else:
             render_selection_summary(
@@ -453,7 +401,6 @@ def main():
                 selected_daebunryu,
                 selected_jungbunryu,
                 period_summary,
-                inline=True,
             )
 
     st.markdown("#### 분석 결과")
