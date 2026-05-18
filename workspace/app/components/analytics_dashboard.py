@@ -244,23 +244,17 @@ def render_analytics_dashboard(bundle: dict, total_t: float, region_count: int) 
         f"필터 조건 기준 집계"
     )
 
-    row1 = st.columns(3, gap="small")
-    row2 = st.columns(3, gap="small")
-
-    charts_r1 = [
+    charts = [
         chart_province_bar(bundle["by_province"]),
         chart_energy_scatter(bundle["scatter"]),
         chart_period_stack(bundle["period_stack"]),
-    ]
-    charts_r2 = [
         chart_intensity_groups(bundle["top_bottom"]),
         chart_daebunryu_donut(bundle["by_daebunryu"]),
         chart_region_treemap(bundle["region"]),
     ]
-
-    for col, fig in zip(row1, charts_r1):
-        with col:
-            st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
-    for col, fig in zip(row2, charts_r2):
-        with col:
-            st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
+    for i in range(0, len(charts), 2):
+        col_left, col_right = st.columns(2, gap="medium")
+        with col_left:
+            st.plotly_chart(charts[i], use_container_width=True, config=PLOT_CONFIG)
+        with col_right:
+            st.plotly_chart(charts[i + 1], use_container_width=True, config=PLOT_CONFIG)
