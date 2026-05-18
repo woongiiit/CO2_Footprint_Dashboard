@@ -29,6 +29,48 @@ def _compact_list_summary(
     return f"{labels[0]} 외 {len(labels) - 1}개"
 
 
+def _wrap_summary_value(text: str, max_line_chars: int = 16) -> str:
+    """쉼표·공백 단위로 끊어 단어 중간 개행을 방지."""
+    if not text or len(text) <= max_line_chars:
+        return text
+
+    if " 외 " in text:
+        head, tail = text.rsplit(" 외 ", 1)
+        head_lines = _wrap_summary_value(head.strip(), max_line_chars)
+        return f"{head_lines}\n외 {tail}"
+
+    parts = [p.strip() for p in text.split(",") if p.strip()]
+    if len(parts) > 1:
+        lines: list[str] = []
+        current = ""
+        for part in parts:
+            candidate = part if not current else f"{current}, {part}"
+            if len(candidate) <= max_line_chars:
+                current = candidate
+            else:
+                if current:
+                    lines.append(current)
+                current = part
+        if current:
+            lines.append(current)
+        return "\n".join(lines)
+
+    tokens = text.split()
+    lines: list[str] = []
+    current = ""
+    for token in tokens:
+        candidate = token if not current else f"{current} {token}"
+        if len(candidate) <= max_line_chars:
+            current = candidate
+        else:
+            if current:
+                lines.append(current)
+            current = token
+    if current:
+        lines.append(current)
+    return "\n".join(lines) if lines else text
+
+
 def _compact_sections(
     provinces, sigungu, daebunryu, jungbunryu, period_summary
 ) -> list[tuple[str, str]]:
@@ -91,25 +133,33 @@ def _full_sections(
     ]
 
 
-def _render_compact_row(sections: list[tuple[str, str]]) -> None:
-    cols = st.columns(len(sections))
-    for col, (label, value) in zip(cols, sections):
-        with col:
-            st.markdown(
-                f'<p class="summary-inline-label">{html.escape(label)}</p>'
-                f'<p class="summary-inline-value">{html.escape(value)}</p>',
-                unsafe_allow_html=True,
-            )
+def _render_vertical_summary(sections: list[tuple[str, str]]) -> None:
+    blocks = []
+    for label, value in sections:
+        wrapped = _wrap_summary_value(value)
+        safe_label = html.escape(label)
+        safe_value = html.escape(wrapped).replace("\n", "<br>")
+        blocks.append(
+            f'<div class="summary-v-item">'
+            f'<div class="summary-v-label">{safe_label}</div>'
+            f'<div class="summary-v-value">{safe_value}</div>'
+            f"</div>"
+        )
+    st.markdown(
+        f'<div class="summary-v-box">{"".join(blocks)}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _render_expanded_detail(sections: list[tuple[str, str]]) -> None:
     for label, value in sections:
+        wrapped = _wrap_summary_value(value, max_line_chars=28)
         st.markdown(
             f'<p class="summary-detail-label">{html.escape(label)}</p>',
             unsafe_allow_html=True,
         )
         st.markdown(
-            f'<div class="summary-detail-body">{html.escape(value)}</div>',
+            f'<div class="summary-detail-body">{html.escape(wrapped)}</div>',
             unsafe_allow_html=True,
         )
 
@@ -124,7 +174,7 @@ def render_selection_summary(
         provinces, sigungu, daebunryu, jungbunryu, period_summary
     )
 
-    _render_compact_row(compact)
+    _render_vertical_summary(compact)
 
     with st.expander("선택 상세 펼치기", expanded=False):
         _render_expanded_detail(full)
