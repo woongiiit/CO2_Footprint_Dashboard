@@ -3,7 +3,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-CHART_HEIGHT = 300
+CHART_HEIGHT = 320
 COLORS = {
     "primary": "#1a7f4e",
     "secondary": "#2ecc71",

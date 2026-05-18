@@ -154,6 +154,24 @@ def inject_styles():
             margin: 0;
             flex: 1;
         }
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            border-color: #e0ebe6 !important;
+            border-radius: 8px !important;
+            background: #f8faf9;
+            padding: 0.25rem 0.5rem;
+        }
+        .summary-inline-label {
+            color: #31333f;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 0.15rem;
+        }
+        .summary-inline-value {
+            color: #5c5f6a;
+            font-size: 0.78rem;
+            line-height: 1.45;
+            word-break: keep-all;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -272,12 +290,24 @@ def build_selection_summary(
 
 
 def render_selection_summary(
-    provinces, sigungu, daebunryu, jungbunryu, period_summary
+    provinces, sigungu, daebunryu, jungbunryu, period_summary, *, inline: bool = False
 ) -> None:
-    blocks = []
-    for label, value in _summary_sections(
+    sections = _summary_sections(
         provinces, sigungu, daebunryu, jungbunryu, period_summary
-    ):
+    )
+    if inline:
+        cols = st.columns(len(sections))
+        for col, (label, value) in zip(cols, sections):
+            with col:
+                st.markdown(
+                    f'<p class="summary-inline-label">{html.escape(label)}</p>'
+                    f'<p class="summary-inline-value">{html.escape(value)}</p>',
+                    unsafe_allow_html=True,
+                )
+        return
+
+    blocks = []
+    for label, value in sections:
         blocks.append(
             f'<div class="summary-item">'
             f'<div class="summary-item-label">{html.escape(label)}</div>'
@@ -342,57 +372,68 @@ def main():
     province_options = get_province_options()
     daebunryu_options = get_daebunryu_options()
 
-    col_filters, col_main = st.columns([1, 2.85], gap="medium")
-
-    with col_filters:
-        hdr_title, hdr_btn = st.columns([4, 1], vertical_alignment="center")
+    with st.container(border=True):
+        hdr_title, hdr_btn = st.columns([6, 1], vertical_alignment="center")
         with hdr_title:
             st.markdown("#### 필터 선택")
         with hdr_btn:
-            if st.button("적용", type="primary", use_container_width=True, key="filter_apply_btn"):
+            if st.button(
+                "적용",
+                type="primary",
+                use_container_width=True,
+                key="filter_apply_btn",
+            ):
                 _apply_filters_from_draft()
 
-        selected_provinces = filter_multiselect(
-            "도",
-            options=province_options,
-            key="filter_provinces",
-            placeholder="도를 선택하세요 (복수 선택 가능)",
+        f_prov, f_sig, f_dae, f_jung, f_period = st.columns(
+            [1.15, 1.15, 1, 1, 1.1], gap="medium"
         )
+        with f_prov:
+            selected_provinces = filter_multiselect(
+                "도",
+                options=province_options,
+                key="filter_provinces",
+                placeholder="도를 선택하세요 (복수 선택 가능)",
+            )
         sigungu_options = get_sigungu_options_for_provinces(selected_provinces)
-        selected_sigungu = filter_multiselect(
-            "시군구",
-            options=sigungu_options,
-            key="filter_sigungu",
-            format_func=lambda x: format_sigungu_label(x, len(selected_provinces)),
-            placeholder=(
-                "도를 먼저 선택하세요"
-                if not selected_provinces
-                else "시군구를 선택하세요 (복수 선택 가능)"
-            ),
-            disabled=not selected_provinces,
-        )
-        selected_daebunryu = filter_multiselect(
-            "업종(대분류)",
-            options=daebunryu_options,
-            key="filter_daebunryu",
-            placeholder="대분류를 선택하세요 (복수 선택 가능)",
-        )
+        with f_sig:
+            selected_sigungu = filter_multiselect(
+                "시군구",
+                options=sigungu_options,
+                key="filter_sigungu",
+                format_func=lambda x: format_sigungu_label(x, len(selected_provinces)),
+                placeholder=(
+                    "도를 먼저 선택하세요"
+                    if not selected_provinces
+                    else "시군구를 선택하세요 (복수 선택 가능)"
+                ),
+                disabled=not selected_provinces,
+            )
+        with f_dae:
+            selected_daebunryu = filter_multiselect(
+                "업종(대분류)",
+                options=daebunryu_options,
+                key="filter_daebunryu",
+                placeholder="대분류를 선택하세요 (복수 선택 가능)",
+            )
         jungbunryu_options = get_jungbunryu_options_for_daebunryu(selected_daebunryu)
-        selected_jungbunryu = filter_multiselect(
-            "업종(중분류)",
-            options=jungbunryu_options,
-            key="filter_jungbunryu",
-            placeholder=(
-                "대분류를 먼저 선택하세요"
-                if not selected_daebunryu
-                else "중분류를 선택하세요 (복수 선택 가능)"
-            ),
-            disabled=not selected_daebunryu,
-        )
-        period_start, period_end = period_range_select(
-            "기간",
-            period_options=period_options,
-        )
+        with f_jung:
+            selected_jungbunryu = filter_multiselect(
+                "업종(중분류)",
+                options=jungbunryu_options,
+                key="filter_jungbunryu",
+                placeholder=(
+                    "대분류를 먼저 선택하세요"
+                    if not selected_daebunryu
+                    else "중분류를 선택하세요 (복수 선택 가능)"
+                ),
+                disabled=not selected_daebunryu,
+            )
+        with f_period:
+            period_start, period_end = period_range_select(
+                "기간",
+                period_options=period_options,
+            )
         period_summary = format_period_range_summary(period_start, period_end)
 
         st.markdown("##### 선택 요약")
@@ -403,6 +444,7 @@ def main():
                 st.session_state.get("applied_daebunryu", []),
                 st.session_state.get("applied_jungbunryu", []),
                 _applied_period_summary(),
+                inline=True,
             )
         else:
             render_selection_summary(
@@ -411,30 +453,30 @@ def main():
                 selected_daebunryu,
                 selected_jungbunryu,
                 period_summary,
+                inline=True,
             )
 
-    with col_main:
-        if not st.session_state.get("filters_applied"):
-            st.info("필터를 선택한 뒤 **[적용]** 버튼을 눌러 주세요.")
-        else:
-            filter_key = _applied_filter_key(period_keys)
-            carbon_df = cached_dataset(*filter_key)
-            chart_bundle = cached_chart_bundle(*filter_key)
-            map_df = aggregate_for_map(carbon_df)
-            total_t = (
-                carbon_df["총_탄소발자국(t_CO2eq)"].sum()
-                if not carbon_df.empty
-                else 0.0
-            )
-            region_count = (
-                carbon_df["시군구"].nunique() if not carbon_df.empty else 0
-            )
+    st.markdown("#### 분석 결과")
 
-            tab_charts, tab_map = st.tabs(["차트", "지도"])
-            with tab_charts:
-                render_analytics_dashboard(chart_bundle, total_t, region_count)
-            with tab_map:
-                render_map(map_df, height=620)
+    if not st.session_state.get("filters_applied"):
+        st.info("필터를 선택한 뒤 **[적용]** 버튼을 눌러 주세요.")
+    else:
+        filter_key = _applied_filter_key(period_keys)
+        carbon_df = cached_dataset(*filter_key)
+        chart_bundle = cached_chart_bundle(*filter_key)
+        map_df = aggregate_for_map(carbon_df)
+        total_t = (
+            carbon_df["총_탄소발자국(t_CO2eq)"].sum()
+            if not carbon_df.empty
+            else 0.0
+        )
+        region_count = carbon_df["시군구"].nunique() if not carbon_df.empty else 0
+
+        tab_charts, tab_map = st.tabs(["차트", "지도"])
+        with tab_charts:
+            render_analytics_dashboard(chart_bundle, total_t, region_count)
+        with tab_map:
+            render_map(map_df, height=520)
 
 
 if __name__ == "__main__":
